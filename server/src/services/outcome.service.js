@@ -1,5 +1,5 @@
 import outcomeRepository from "../repositories/outcome.repository.js";
-import { toOutcomeListDTO } from "../dto/outcome.dto.js";
+import { toOutcomeDTO, toOutcomeListDTO } from "../dto/outcome.dto.js";
 
 class OutcomeService {
   async listByClinic(clinicId, { page = 1, limit = 20 } = {}) {
@@ -14,7 +14,12 @@ class OutcomeService {
     const outcome = await outcomeRepository.create({
       patientName, painScore, mobilityScore, dateRecorded, clinicId, createdBy,
     });
-    return outcome.toObject();
+    const populated = await outcomeRepository.findById(outcome._id);
+    return toOutcomeDTO(populated);
+  }
+
+  async getStats(clinicId) {
+    return outcomeRepository.getClinicStats(clinicId);
   }
 }
 

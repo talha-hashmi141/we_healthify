@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 
-const requestId = (req, _res, next) => {
+const requestId = (req, res, next) => {
   req.requestId = req.headers["x-request-id"] || randomUUID();
+  res.setHeader("x-request-id", req.requestId);
   next();
 };
 

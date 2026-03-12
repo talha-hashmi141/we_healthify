@@ -21,6 +21,7 @@ export const tenantLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.clinicId || req.ip,
+  keyGenerator: (req) => req.clinicId?.toString() || "unknown",
+  validate: { xForwardedForHeader: false },
   message: { success: false, message: "Tenant rate limit exceeded, try again later" },
 });

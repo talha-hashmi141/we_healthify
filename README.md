@@ -115,7 +115,7 @@ Each layer has a single responsibility:
 
 #### Approach: Shared Database with Tenant Discriminator
 
-Every document that contains tenant-specific data includes a `clinicId` field. Data isolation is enforced at the middleware level, not at individual query sites.
+Every document that contains tenant-specific data includes a `clinicId` field. The auth middleware reads the user's current `clinicId` from the database on every request (not from the JWT), so changes to a user's clinic assignment take effect immediately without waiting for token expiry.
 
 #### System Architecture
 
@@ -164,7 +164,8 @@ sequenceDiagram
 
   User->>React: View outcomes (page 1)
   React->>API: GET /api/v1/outcomes?page=1&limit=20 (Bearer JWT)
-  API->>API: Auth middleware extracts clinicId from JWT
+  API->>DB: Auth middleware loads user, reads clinicId from user record
+  DB-->>API: User doc (current clinicId)
   API->>API: Tenant rate limiter checks per-clinic quota
   API->>DB: outcomeRepository.findByClinicId(clinicId, {page, limit})
   DB-->>API: Only this clinic's outcomes
@@ -184,12 +185,18 @@ flowchart LR
 
 #### How isolation works
 
-1. **Login** — user authenticates; the JWT payload includes both `userId` and `clinicId`
-2. **Auth middleware** — on every protected request, the middleware verifies the JWT and extracts `clinicId` into `req.clinicId`
+1. **Login** — user authenticates; the JWT identifies the user
+2. **Auth middleware** — on every protected request, the middleware verifies the JWT, loads the user from the database, and reads `clinicId` from the **user record** (not the JWT). This means if a user's clinic changes or they're deactivated, the change takes effect on the next request
 3. **Tenant rate limiter** — per-clinic rate limiting prevents one tenant from exhausting resources for others
 4. **Repository layer** — all queries use `clinicId` as a mandatory filter (`outcomeRepository.findByClinicId(clinicId)`)
-5. **DTO layer** — responses are shaped through DTOs that hide internal schema from API consumers
-6. **Result** — a user from Clinic A physically cannot retrieve or modify Clinic B's data. The clinicId is derived server-side from the JWT, not from any client-supplied parameter
+5. **DTO layer** — responses are shaped through DTOs that hide internal schema (`_id` → `id`, `clinicId.name` → `clinic`)
+6. **Result** — a user from Clinic A cannot retrieve or modify Clinic B's data. The clinicId is derived server-side from the user record, not from any client-supplied parameter
+
+**Enforcement model:** Tenant scoping is centralized in the auth middleware, which sets `req.clinicId`. All current repository methods require `clinicId` as a parameter. However, this is a convention enforced by code review — a developer could still write a repository method that omits the filter. In a production system, this would be hardened with a Mongoose query plugin that auto-injects `clinicId` on every query, or by using database-per-tenant where the connection itself is scoped
+
+### User Identity
+
+Email uniqueness is **scoped per tenant** — the compound unique index `{ clinicId, email }` allows the same email address to exist in different clinics. This is a deliberate design choice for multi-tenant SaaS where a practitioner might have accounts at multiple clinics. Login uses email alone (globally unique within the seed data), but the schema supports per-tenant identity if tenant context is added to the login flow.
 
 ### Index Strategy
 
@@ -224,7 +231,7 @@ Every request is assigned a unique `x-request-id` (either from the incoming head
 ### Why this approach
 
 - **Simplicity** — single database, single connection pool, straightforward deployment
-- **Enforceability** — tenant scoping happens in one middleware; developers can't accidentally skip it
+- **Enforceability** — tenant scoping is centralized in one middleware; all repositories accept `clinicId` as a required parameter. Convention-based, hardened in production via query plugins or database-per-tenant
 - **Scalability** — compound indexes on `{ clinicId, dateRecorded }` keep tenant-scoped queries efficient regardless of total data volume
 - **Migration path** — the middleware interface is identical whether you use a discriminator column or database-per-tenant. Switching strategies requires changing only the connection resolver, not business logic
 
@@ -348,6 +355,7 @@ we_healthify/
 | GET | `/api/v1/auth/me` | Yes | Get current user profile (UserDTO) |
 | GET | `/api/v1/outcomes?page=1&limit=20` | Yes | List outcomes with pagination (scoped to user's clinic) |
 | POST | `/api/v1/outcomes` | Yes | Create outcome (scoped to user's clinic) |
+| GET | `/api/v1/outcomes/stats` | Yes | Clinic-wide aggregate stats (total, unique patients, averages) |
 
 Unversioned aliases (`/api/auth/*`, `/api/outcomes/*`) are also available for backward compatibility.
 

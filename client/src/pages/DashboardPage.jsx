@@ -9,6 +9,7 @@ import OutcomeList from "../components/OutcomeList";
 export default function DashboardPage() {
   const { user } = useAuth();
   const [outcomes, setOutcomes] = useState([]);
+  const [stats, setStats] = useState(null);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -26,9 +27,22 @@ export default function DashboardPage() {
     }
   }, [page]);
 
-  useEffect(() => { fetchOutcomes(page); }, [page, fetchOutcomes]);
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await outcomeAPI.stats();
+      setStats(res.data.stats);
+    } catch (err) {
+      console.error("Failed to fetch stats:", err.message);
+    }
+  }, []);
 
-  const handlePageChange = (newPage) => setPage(newPage);
+  useEffect(() => { fetchOutcomes(page); }, [page, fetchOutcomes]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  const handleCreated = () => {
+    fetchOutcomes(1);
+    fetchStats();
+  };
 
   const clinicName = user?.clinic || user?.clinicId?.name || "Your Clinic";
 
@@ -43,13 +57,13 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <StatsCards outcomes={outcomes} />
-        <OutcomeForm onCreated={() => fetchOutcomes(1)} />
+        <StatsCards stats={stats} />
+        <OutcomeForm onCreated={handleCreated} />
         <OutcomeList
           outcomes={outcomes}
           loading={loading}
           pagination={pagination}
-          onPageChange={handlePageChange}
+          onPageChange={setPage}
         />
       </main>
     </div>

@@ -17,7 +17,9 @@ api.interceptors.response.use(
   (error) => {
     const message = error.response?.data?.message || "Something went wrong";
     const errors = error.response?.data?.errors || [];
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes("/auth/login");
+
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem(env.TOKEN_KEY);
       window.location.href = "/";
     }

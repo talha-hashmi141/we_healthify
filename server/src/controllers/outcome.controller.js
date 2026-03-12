@@ -18,3 +18,8 @@ export const createOutcome = asyncHandler(async (req, res) => {
   });
   sendResponse(res, 201, { outcome }, "Outcome created");
 });
+
+export const getStats = asyncHandler(async (req, res) => {
+  const stats = await outcomeService.getStats(req.clinicId);
+  sendResponse(res, 200, { stats }, "Stats fetched");
+});
