@@ -122,46 +122,29 @@ Every document that contains tenant-specific data includes a `clinicId` field. D
 ```mermaid
 flowchart TB
   subgraph ClientApp["React Frontend"]
-    LoginPage["Login Page"]
-    Dashboard["Dashboard"]
-    AuthCtx["Auth Context"]
+    AuthCtx["Auth Context + JWT"]
     AxiosInst["Axios Instance"]
-    LoginPage --> AuthCtx
-    Dashboard --> AuthCtx
-    AuthCtx -->|"Bearer JWT"| AxiosInst
+    AuthCtx -->|"Bearer token"| AxiosInst
   end
 
   subgraph APILayer["Express API Layer"]
-    ReqId["Request ID"]
-    Helmet["Helmet"]
-    CORS["CORS"]
-    RateLimit["Rate Limiter"]
-    Sanitize["Input Sanitizer"]
-    ReqLog["Request Logger"]
-    ZodValidate["Zod Validation"]
-    AuthMW["Auth Middleware"]
-    TenantLimit["Tenant Rate Limiter"]
+    Security["Security Middleware\n(Helmet, CORS, Rate Limit, Sanitize, Zod)"]
+    AuthMW["JWT Auth → Tenant Scope"]
     Controllers["Controllers"]
     Services["Services"]
     Repos["Repositories"]
     DTOs["DTOs"]
-    ReqId --> Helmet --> CORS --> RateLimit --> Sanitize --> ReqLog --> ZodValidate --> AuthMW
-    AuthMW -->|"extracts clinicId from JWT"| TenantLimit
-    TenantLimit --> Controllers
+    Security --> AuthMW -->|"req.clinicId"| Controllers
     Controllers --> Services --> Repos
     Controllers --> DTOs
   end
 
   subgraph DataLayer["MongoDB — Single Database"]
-    Clinics["clinics"]
-    Users["users (has clinicId)"]
-    Outcomes["outcomes (has clinicId)"]
+    Collections["clinics · users · outcomes\n(all scoped by clinicId)"]
   end
 
-  AxiosInst -->|"HTTP requests"| ReqId
-  Repos --> Clinics
-  Repos --> Users
-  Repos --> Outcomes
+  AxiosInst -->|"HTTP"| Security
+  Repos --> Collections
 ```
 
 #### Request Flow — Tenant Isolation
@@ -192,17 +175,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  Req["Incoming Request"] --> RID["Request ID (x-request-id)"]
-  RID --> H["Helmet (HTTP headers)"]
-  H --> C["CORS (origin whitelist)"]
-  C --> RL["Global Rate Limiter (100/15min)"]
-  RL --> BP["Body Parser (16kb limit)"]
-  BP --> S["Sanitize (XSS strip)"]
-  S --> LOG["Request Logger (structured JSON)"]
-  LOG --> Z["Zod Validation"]
-  Z --> A["JWT Auth + Tenant Scope"]
-  A --> TL["Tenant Rate Limiter (100/min per clinic)"]
-  TL --> Ctrl["Controller → Service → Repository"]
+  Req["Request"] --> Security["Security\n(Helmet, CORS, Rate Limit)"]
+  Security --> Validate["Sanitize + Zod"]
+  Validate --> Auth["JWT Auth\n+ Tenant Scope"]
+  Auth --> TL["Tenant Rate Limit"]
+  TL --> App["Controller → Service → Repository"]
 ```
 
 #### How isolation works
